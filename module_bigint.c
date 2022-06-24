@@ -102,7 +102,7 @@ BASIC_BIN_OP(xor,krk_long_xor)
 BASIC_BIN_OP(and,krk_long_and)
 
 static void _krk_long_lshift(krk_long out, krk_long val, krk_long shift) {
-	if (krk_long_sign(shift) < 0) { krk_runtimeError(vm.exceptions->valueError, "negative shift"); return; }
+	if (krk_long_sign(shift) < 0) { krk_runtimeError(vm.exceptions->valueError, "negative shift count"); return; }
 	krk_long multiplier;
 	krk_long_init_si(multiplier,0);
 	krk_long_bit_set(multiplier, krk_long_medium(shift));
@@ -111,7 +111,7 @@ static void _krk_long_lshift(krk_long out, krk_long val, krk_long shift) {
 }
 
 static void _krk_long_rshift(krk_long out, krk_long val, krk_long shift) {
-	if (krk_long_sign(shift) < 0) { krk_runtimeError(vm.exceptions->valueError, "negative shift"); return; }
+	if (krk_long_sign(shift) < 0) { krk_runtimeError(vm.exceptions->valueError, "negative shift count"); return; }
 	krk_long multiplier, garbage;
 	krk_long_init_many(multiplier,garbage,NULL);
 	krk_long_bit_set(multiplier, krk_long_medium(shift));
