@@ -387,9 +387,8 @@ static int krk_long_mul(KrkLong * res, const KrkLong * a, const KrkLong * b) {
 	return 0;
 }
 
-static int _lshift_one(KrkLong * out, const KrkLong * in) {
+static int _lshift_one(KrkLong * in) {
 	if (in->width == 0) {
-		krk_long_clear(out);
 		return 0;
 	}
 
@@ -400,17 +399,18 @@ static int _lshift_one(KrkLong * out, const KrkLong * in) {
 		out_width += 1;
 	}
 
-	krk_long_resize(out, out_width);
+	krk_long_resize(in, out_width);
 
 	int carry = 0;
 
 	for (size_t i = 0; i < abs_width; ++i) {
-		out->digits[i] = ((in->digits[i] << 1) + carry) & DIGIT_MAX;
-		carry = (in->digits[i] >> (DIGIT_SHIFT -1));
+		uint32_t digit = in->digits[i];
+		in->digits[i] = ((digit << 1) + carry) & DIGIT_MAX;
+		carry = (digit >> (DIGIT_SHIFT -1));
 	}
 
 	if (carry) {
-		out->digits[out_width-1] = 1;
+		in->digits[out_width-1] = 1;
 	}
 
 	return 0;
@@ -479,9 +479,6 @@ static int _div_abs(KrkLong * quot, KrkLong * rem, const KrkLong * a, const KrkL
 	size_t awidth = a->width < 0 ? -a->width : a->width;
 	size_t bwidth = b->width < 0 ? -b->width : b->width;
 
-	KrkLong tmp;
-	krk_long_init_si(&tmp, 0);
-
 	size_t bits = _bits_in(a);
 
 	KrkLong absa, absb;
@@ -494,20 +491,17 @@ static int _div_abs(KrkLong * quot, KrkLong * rem, const KrkLong * a, const KrkL
 		size_t _i = bits - i - 1;
 
 		/* Shift remainder by one */
-		_lshift_one(&tmp, rem);
-		_swap(rem,&tmp);
+		_lshift_one(rem);
 
 		int is_set = _bit_is_set(&absa, _i);
 		_bit_set_zero(rem, is_set);
 		if (krk_long_compare(rem,&absb) >= 0) {
-			_sub_big_small(&tmp,rem,&absb);
-			_swap(rem,&tmp);
-
+			_sub_big_small(rem,rem,&absb);
 			krk_long_bit_set(quot, _i);
 		}
 	}
 
-	krk_long_clear_many(&tmp,&absa,&absb,NULL);
+	krk_long_clear_many(&absa,&absb,NULL);
 
 	return 0;
 }
