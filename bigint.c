@@ -524,18 +524,11 @@ static int krk_long_div_rem(KrkLong * quot, KrkLong * rem, const KrkLong * a, co
 	if ((a->width < 0) != (b->width < 0)) {
 		/* Round down if remainder */
 		if (rem->width) {
-			KrkLong one, scratch;
+			KrkLong one;
 			krk_long_init_si(&one, 1);
-			krk_long_init_si(&scratch, 0);
-
-			/* quot -= 1 */
-			krk_long_add(&scratch, quot, &one);
-			_swap(quot, &scratch);
-
-			_sub_big_small(&scratch, b, rem);
-			_swap(rem, &scratch);
-
-			krk_long_clear_many(&one,&scratch,NULL);
+			krk_long_add(quot, quot, &one);
+			_sub_big_small(rem, b, rem);
+			krk_long_clear(&one);
 		}
 
 		/* Signs are different, negate and round down if necessary */
@@ -698,12 +691,11 @@ static int krk_long_and(KrkLong * res, const KrkLong * a, const KrkLong * b) {
 
 char * krk_long_to_str(const KrkLong * n, int _base, const char * prefix, size_t *size) {
 	static const char vals[] = "0123456789abcdef";
-	KrkLong abs, mod, base, scratch;
+	KrkLong abs, mod, base;
 
 	krk_long_init_si(&abs, 0);
 	krk_long_init_si(&mod, 0);
 	krk_long_init_si(&base, _base);
-	krk_long_init_si(&scratch, 0);
 
 	krk_long_abs(&abs, n);
 
@@ -717,8 +709,7 @@ char * krk_long_to_str(const KrkLong * n, int _base, const char * prefix, size_t
 		*writer++ = '0';
 	} else {
 		while (krk_long_sign(&abs) > 0) {
-			krk_long_div_rem(&scratch,&mod,&abs,&base);
-			_swap(&abs,&scratch);
+			krk_long_div_rem(&abs,&mod,&abs,&base);
 			*writer++ = vals[krk_long_short(&mod)];
 		}
 	}
@@ -736,7 +727,7 @@ char * krk_long_to_str(const KrkLong * n, int _base, const char * prefix, size_t
 
 	free(tmp);
 
-	krk_long_clear_many(&abs,&mod,&base,&scratch,NULL);
+	krk_long_clear_many(&abs,&mod,&base,NULL);
 	*size = strlen(rev);
 
 	return rev;
@@ -798,22 +789,19 @@ static int krk_long_parse_string(const char * str, KrkLong * num) {
 
 	krk_long_init_si(num, 0);
 
-	KrkLong _base, scratch1, scratch2;
+	KrkLong _base, scratch;
 	krk_long_init_si(&_base, base);
-	krk_long_init_si(&scratch1, 0);
-	krk_long_init_si(&scratch2, 0);
+	krk_long_init_si(&scratch, 0);
 
 	while (is_valid(base, *c)) {
 		if (*c == '_') {
 			c++;
 			continue;
 		}
-		krk_long_mul(&scratch1, num, &_base);
-		_swap(num,&scratch1);
-		krk_long_clear(&scratch1);
-		krk_long_init_si(&scratch1, convert_digit(*c));
-		krk_long_add(&scratch2, num, &scratch1);
-		_swap(num,&scratch2);
+		krk_long_mul(num, num, &_base);
+		krk_long_clear(&scratch);
+		krk_long_init_si(&scratch, convert_digit(*c));
+		krk_long_add(num, num, &scratch);
 		c++;
 	}
 
@@ -821,7 +809,7 @@ static int krk_long_parse_string(const char * str, KrkLong * num) {
 		krk_long_set_sign(num, -1);
 	}
 
-	krk_long_clear_many(&_base, &scratch1, &scratch2, NULL);
+	krk_long_clear_many(&_base, &scratch, NULL);
 }
 
 #ifndef AS_LIB
