@@ -15,7 +15,7 @@ struct BigInteger {
 
 typedef struct BigInteger KrkLong;
 
-int krk_long_init_si(KrkLong * num, int64_t val) {
+static int krk_long_init_si(KrkLong * num, int64_t val) {
 	if (val == 0) {
 		num->width = 0;
 		num->digits = NULL;
@@ -51,14 +51,14 @@ int krk_long_init_si(KrkLong * num, int64_t val) {
 	return 0;
 }
 
-int krk_long_clear(KrkLong * num) {
+static int krk_long_clear(KrkLong * num) {
 	if (num->digits) free(num->digits);
 	num->width = 0;
 	num->digits = NULL;
 	return 0;
 }
 
-int krk_long_clear_many(KrkLong *a, ...) {
+static int krk_long_clear_many(KrkLong *a, ...) {
 	va_list argp;
 	va_start(argp, a);
 
@@ -72,7 +72,7 @@ int krk_long_clear_many(KrkLong *a, ...) {
 	return 0;
 }
 
-int krk_long_init_many(KrkLong *a, ...) {
+static int krk_long_init_many(KrkLong *a, ...) {
 	va_list argp;
 	va_start(argp, a);
 
@@ -86,7 +86,7 @@ int krk_long_init_many(KrkLong *a, ...) {
 	return 0;
 }
 
-int krk_long_init_copy(KrkLong * out, KrkLong * in) {
+static int krk_long_init_copy(KrkLong * out, const KrkLong * in) {
 	size_t abs_width = in->width < 0 ? -in->width : in->width;
 	out->width = in->width;
 	out->digits = out->width ? malloc(sizeof(uint32_t) * abs_width) : NULL;
@@ -96,16 +96,17 @@ int krk_long_init_copy(KrkLong * out, KrkLong * in) {
 	return 0;
 }
 
-int krk_long_resize(KrkLong * num, ssize_t newdigits) {
+static int krk_long_resize(KrkLong * num, ssize_t newdigits) {
 	if (newdigits == 0) {
 		krk_long_clear(num);
 		return 0;
 	}
 
 	size_t abs = newdigits < 0 ? -newdigits : newdigits;
+	size_t eabs = num->width < 0 ? -num->width : num->width;
 	if (num->width == 0) {
 		num->digits = malloc(sizeof(uint32_t) * newdigits);
-	} else {
+	} else if (eabs < abs) {
 		num->digits = realloc(num->digits, sizeof(uint32_t) * newdigits);
 	}
 
@@ -136,7 +137,7 @@ static int krk_long_trim(KrkLong * num) {
 	}
 }
 
-static int krk_long_compare(KrkLong * a, KrkLong * b) {
+static int krk_long_compare(const KrkLong * a, const KrkLong * b) {
 	if (a->width > b->width) return 1;
 	if (b->width > a->width) return -1;
 	int sign = a->width < 0 ? -1 : 1;
@@ -148,7 +149,7 @@ static int krk_long_compare(KrkLong * a, KrkLong * b) {
 	return 0; /* they are the same */
 }
 
-static int krk_long_compare_abs(KrkLong * a, KrkLong * b) {
+static int krk_long_compare_abs(const KrkLong * a, const KrkLong * b) {
 	size_t a_width = a->width < 0 ? -a->width : a->width;
 	size_t b_width = b->width < 0 ? -b->width : b->width;
 	if (a_width > b_width) return 1;
@@ -161,7 +162,7 @@ static int krk_long_compare_abs(KrkLong * a, KrkLong * b) {
 	return 0; /* they are the same */
 }
 
-static int krk_long_add_ignore_sign(KrkLong * res, KrkLong * a, KrkLong * b) {
+static int krk_long_add_ignore_sign(KrkLong * res, const KrkLong * a, const KrkLong * b) {
 	size_t awidth = a->width < 0 ? -a->width : a->width;
 	size_t bwidth = b->width < 0 ? -b->width : b->width;
 	size_t owidth = awidth < bwidth ? bwidth + 1 : awidth + 1;
@@ -180,7 +181,7 @@ static int krk_long_add_ignore_sign(KrkLong * res, KrkLong * a, KrkLong * b) {
 	return 0;
 }
 
-static int _sub_big_small(KrkLong * res, KrkLong * a, KrkLong * b) {
+static int _sub_big_small(KrkLong * res, const KrkLong * a, const KrkLong * b) {
 	/* Subtract b from a, where a is bigger */
 	size_t awidth = a->width < 0 ? -a->width : a->width;
 	size_t bwidth = b->width < 0 ? -b->width : b->width;
@@ -219,11 +220,11 @@ static int _swap(KrkLong * a, KrkLong * b) {
 	return 0;
 }
 
-#define PREP_OUTPUT(res,a,b) KrkLong _tmp_out_ ## res, *_swap_out_ ## res = NULL; do { if (res == a || res == b) { krk_long_init_si(&_tmp_out_ ## res, 0); res = &_tmp_out_ ## res; _swap_out_ ## res = (res == a) ? a : b; } } while (0)
-#define PREP_OUTPUT1(res,a) KrkLong _tmp_out_ ## res, *_swap_out_ ## res = NULL; do { if (res == a) { krk_long_init_si(&_tmp_out_ ## res, 0); res = &_tmp_out_ ## res; _swap_out_ ## res = a; } } while (0)
+#define PREP_OUTPUT(res,a,b) KrkLong _tmp_out_ ## res, *_swap_out_ ## res = NULL; do { if (res == a || res == b) { krk_long_init_si(&_tmp_out_ ## res, 0); _swap_out_ ## res = res; res = &_tmp_out_ ## res; } } while (0)
+#define PREP_OUTPUT1(res,a) KrkLong _tmp_out_ ## res, *_swap_out_ ## res = NULL; do { if (res == a) { krk_long_init_si(&_tmp_out_ ## res, 0); _swap_out_ ## res = res;  res = &_tmp_out_ ## res; } } while (0)
 #define FINISH_OUTPUT(res) do { if (_swap_out_ ## res) { _swap(_swap_out_ ## res, res); krk_long_clear(&_tmp_out_ ## res); } } while (0)
 
-int krk_long_add(KrkLong * res, KrkLong * a, KrkLong * b) {
+static int krk_long_add(KrkLong * res, const KrkLong * a, const KrkLong * b) {
 	PREP_OUTPUT(res,a,b);
 
 	if (a->width == 0) {
@@ -280,7 +281,7 @@ int krk_long_add(KrkLong * res, KrkLong * a, KrkLong * b) {
 	return 0;
 }
 
-int krk_long_sub(KrkLong * res, KrkLong * a, KrkLong * b) {
+static int krk_long_sub(KrkLong * res, const KrkLong * a, const KrkLong * b) {
 	PREP_OUTPUT(res,a,b);
 	if (a->width == 0) {
 		krk_long_clear(res);
@@ -329,7 +330,7 @@ static int krk_long_zero(KrkLong * num) {
 	return 0;
 }
 
-static int _mul_abs(KrkLong * res, KrkLong * a, KrkLong * b) {
+static int _mul_abs(KrkLong * res, const KrkLong * a, const KrkLong * b) {
 
 	size_t awidth = a->width < 0 ? -a->width : a->width;
 	size_t bwidth = b->width < 0 ? -b->width : b->width;
@@ -354,7 +355,7 @@ static int _mul_abs(KrkLong * res, KrkLong * a, KrkLong * b) {
 	return 0;
 }
 
-int krk_long_mul(KrkLong * res, KrkLong * a, KrkLong * b) {
+static int krk_long_mul(KrkLong * res, const KrkLong * a, const KrkLong * b) {
 	PREP_OUTPUT(res,a,b);
 
 	if (a->width == 0) {
@@ -386,7 +387,7 @@ int krk_long_mul(KrkLong * res, KrkLong * a, KrkLong * b) {
 	return 0;
 }
 
-static int _lshift_one(KrkLong * out, KrkLong * in) {
+static int _lshift_one(KrkLong * out, const KrkLong * in) {
 	if (in->width == 0) {
 		krk_long_clear(out);
 		return 0;
@@ -415,7 +416,7 @@ static int _lshift_one(KrkLong * out, KrkLong * in) {
 	return 0;
 }
 
-static size_t _bits_in(KrkLong * num) {
+static size_t _bits_in(const KrkLong * num) {
 	if (num->width == 0) return 0;
 
 	size_t abs_width = num->width < 0 ? -num->width : num->width;
@@ -431,7 +432,7 @@ static size_t _bits_in(KrkLong * num) {
 	return c + (abs_width-1) * DIGIT_SHIFT;
 }
 
-static size_t _bit_is_set(KrkLong * num, size_t bit) {
+static size_t _bit_is_set(const KrkLong * num, size_t bit) {
 	size_t abs_width = num->width < 0 ? -num->width : num->width;
 	size_t digit_offset = bit / DIGIT_SHIFT;
 	size_t digit_bit    = bit % DIGIT_SHIFT;
@@ -449,7 +450,7 @@ static int _bit_set_zero(KrkLong * num, int val) {
 	return 0;
 }
 
-int krk_long_bit_set(KrkLong * num, size_t bit) {
+static int krk_long_bit_set(KrkLong * num, size_t bit) {
 	size_t abs_width = num->width < 0 ? -num->width : num->width;
 	size_t digit_offset = bit / DIGIT_SHIFT;
 	size_t digit_bit    = bit % DIGIT_SHIFT;
@@ -462,11 +463,10 @@ int krk_long_bit_set(KrkLong * num, size_t bit) {
 	}
 
 	num->digits[digit_offset] |= (1 << digit_bit);
-
 	return 0;
 }
 
-static int _div_abs(KrkLong * quot, KrkLong * rem, KrkLong * a, KrkLong * b) {
+static int _div_abs(KrkLong * quot, KrkLong * rem, const KrkLong * a, const KrkLong * b) {
 	/* quot = a / b; rem = a % b */
 
 	/* Zero quotiant and remainder */
@@ -512,7 +512,7 @@ static int _div_abs(KrkLong * quot, KrkLong * rem, KrkLong * a, KrkLong * b) {
 	return 0;
 }
 
-int krk_long_div_rem(KrkLong * quot, KrkLong * rem, KrkLong * a, KrkLong * b) {
+static int krk_long_div_rem(KrkLong * quot, KrkLong * rem, const KrkLong * a, const KrkLong * b) {
 	PREP_OUTPUT(quot,a,b);
 	PREP_OUTPUT(rem,a,b);
 	if (_div_abs(quot,rem,a,b)) {
@@ -551,7 +551,7 @@ int krk_long_div_rem(KrkLong * quot, KrkLong * rem, KrkLong * a, KrkLong * b) {
 	return 0;
 }
 
-int krk_long_abs(KrkLong * out, KrkLong * in) {
+static int krk_long_abs(KrkLong * out, const KrkLong * in) {
 	PREP_OUTPUT1(out,in);
 	krk_long_clear(out);
 	krk_long_init_copy(out, in);
@@ -560,7 +560,7 @@ int krk_long_abs(KrkLong * out, KrkLong * in) {
 	return 0;
 }
 
-int krk_long_sign(KrkLong * num) {
+static int krk_long_sign(const KrkLong * num) {
 	if (num->width == 0) return 0;
 	return num->width < 0 ? -1 : 1;
 }
@@ -582,7 +582,7 @@ uint32_t krk_long_short(KrkLong * num) {
 	return num->digits[0];
 }
 
-int64_t krk_long_medium(KrkLong * num) {
+static int64_t krk_long_medium(KrkLong * num) {
 	if (num->width == 0) return 0;
 
 	if (num->width < 0) {
@@ -600,7 +600,7 @@ int64_t krk_long_medium(KrkLong * num) {
 	}
 }
 
-static int do_bin_op(KrkLong * res, KrkLong * a, KrkLong * b, char op) {
+static int do_bin_op(KrkLong * res, const KrkLong * a, const KrkLong * b, char op) {
 	size_t awidth = a->width < 0 ? -a->width : a->width;
 	size_t bwidth = b->width < 0 ? -b->width : b->width;
 	size_t owidth = ((awidth > bwidth) ? awidth : bwidth) + 1;
@@ -651,7 +651,7 @@ static int do_bin_op(KrkLong * res, KrkLong * a, KrkLong * b, char op) {
 	return 0;
 }
 
-int krk_long_or(KrkLong * res, KrkLong * a, KrkLong * b) {
+static int krk_long_or(KrkLong * res, const KrkLong * a, const KrkLong * b) {
 	PREP_OUTPUT(res,a,b);
 	if (a->width == 0) {
 		krk_long_clear(res);
@@ -670,14 +670,14 @@ int krk_long_or(KrkLong * res, KrkLong * a, KrkLong * b) {
 	return out;
 }
 
-int krk_long_xor(KrkLong * res, KrkLong * a, KrkLong * b) {
+static int krk_long_xor(KrkLong * res, const KrkLong * a, const KrkLong * b) {
 	PREP_OUTPUT(res,a,b);
 	int out = do_bin_op(res,a,b,'^');
 	FINISH_OUTPUT(res);
 	return out;
 }
 
-int krk_long_and(KrkLong * res, KrkLong * a, KrkLong * b) {
+static int krk_long_and(KrkLong * res, const KrkLong * a, const KrkLong * b) {
 	PREP_OUTPUT(res,a,b);
 	if (a->width == 0) {
 		krk_long_clear(res);
@@ -696,7 +696,7 @@ int krk_long_and(KrkLong * res, KrkLong * a, KrkLong * b) {
 	return out;
 }
 
-char * krk_long_to_str(KrkLong * n, int _base, const char * prefix, size_t *size) {
+char * krk_long_to_str(const KrkLong * n, int _base, const char * prefix, size_t *size) {
 	static const char vals[] = "0123456789abcdef";
 	KrkLong abs, mod, base, scratch;
 
@@ -768,7 +768,7 @@ static int convert_digit(char c) {
 	return 0;
 }
 
-int krk_long_parse_string(const char * str, KrkLong * num) {
+static int krk_long_parse_string(const char * str, KrkLong * num) {
 	const char * c = str;
 	int base = 10;
 	int sign = 1;
@@ -826,7 +826,7 @@ int krk_long_parse_string(const char * str, KrkLong * num) {
 
 #ifndef AS_LIB
 #define PRINTER(name,base,prefix) \
-	static void print_base_ ## name (FILE * f, KrkLong * num) { \
+	static void print_base_ ## name (FILE * f, const KrkLong * num) { \
 		size_t unused; \
 		char * s = krk_long_to_str(num, base, prefix, &unused); \
 		fprintf(f, "%s", s); \
@@ -838,7 +838,7 @@ PRINTER(hex,16,"x0")
 PRINTER(oct,8,"o0")
 PRINTER(bin,2,"b0")
 
-static void verbose_operation(char * op, int (*func)(KrkLong*,KrkLong*,KrkLong*), KrkLong *c, KrkLong *a, KrkLong *b) {
+static void verbose_operation(char * op, int (*func)(KrkLong*,const KrkLong*,const KrkLong*), KrkLong *c, const KrkLong *a, const KrkLong *b) {
 	print_base_str(stderr, a);
 	fprintf(stderr, " %s ", op);
 	print_base_str(stderr, b);
@@ -848,7 +848,7 @@ static void verbose_operation(char * op, int (*func)(KrkLong*,KrkLong*,KrkLong*)
 	fprintf(stderr, "\n");
 }
 
-static void verbose_div(KrkLong *c, KrkLong * d, KrkLong *a, KrkLong *b) {
+static void verbose_div(KrkLong *c, KrkLong * d, const KrkLong *a, const KrkLong *b) {
 	krk_long_div_rem(c,d,a,b);
 
 	print_base_str(stderr, a);
