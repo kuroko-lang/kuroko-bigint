@@ -10,7 +10,7 @@
 #define AS_LIB
 #include "bigint.c"
 
-static KrkClass * BigInt;
+static KrkClass * _long;
 
 typedef KrkLong krk_long[1];
 
@@ -19,8 +19,8 @@ struct BigInt {
 	krk_long value;
 };
 
-#define AS_BigInt(o) ((struct BigInt *)AS_OBJECT(o))
-#define IS_BigInt(o) (krk_isInstanceOf(o, BigInt))
+#define AS_long(o) ((struct BigInt *)AS_OBJECT(o))
+#define IS_long(o) (krk_isInstanceOf(o, _long))
 
 #define CURRENT_CTYPE struct BigInt *
 #define CURRENT_NAME  self
@@ -29,11 +29,11 @@ static void make_long(krk_integer_type t, struct BigInt * self) {
 	krk_long_init_si(self->value, t);
 }
 
-static void _BigInt_gcsweep(KrkInstance * self) {
+static void _long_gcsweep(KrkInstance * self) {
 	krk_long_clear(((struct BigInt*)self)->value);
 }
 
-KRK_METHOD(BigInt,__init__,{
+KRK_METHOD(long,__init__,{
 	METHOD_TAKES_AT_MOST(1);
 	if (argc < 2) make_long(0,self);
 	else if (IS_INTEGER(argv[1])) make_long(AS_INTEGER(argv[1]),self);
@@ -45,13 +45,13 @@ KRK_METHOD(BigInt,__init__,{
 })
 
 #if 0
-KRK_METHOD(BigInt,__float__,{
+KRK_METHOD(long,__float__,{
 	return FLOATING_VAL(krk_long_get_double(self->value));
 })
 #endif
 
 #define PRINTER(name,base,prefix) \
-	KRK_METHOD(BigInt,__ ## name ## __,{ \
+	KRK_METHOD(long,__ ## name ## __,{ \
 		size_t size; \
 		char * rev = krk_long_to_str(self->value, base, prefix, &size); \
 		return OBJECT_VAL(krk_takeString(rev,size)); \
@@ -62,36 +62,36 @@ PRINTER(hex,16,"x0")
 PRINTER(oct,8,"o0")
 PRINTER(bin,2,"b0")
 
-KRK_METHOD(BigInt,__hash__,{
+KRK_METHOD(long,__hash__,{
 	return INTEGER_VAL((uint32_t)(krk_long_medium(self->value)));
 })
 
-static KrkValue make_BigInt(krk_long val) {
-	krk_push(OBJECT_VAL(krk_newInstance(BigInt)));
-	*AS_BigInt(krk_peek(0))->value = *val;
+static KrkValue make_long_obj(krk_long val) {
+	krk_push(OBJECT_VAL(krk_newInstance(_long)));
+	*AS_long(krk_peek(0))->value = *val;
 	return krk_pop();
 }
 
-KRK_METHOD(BigInt,__int__,{
+KRK_METHOD(long,__int__,{
 	return INTEGER_VAL(krk_long_medium(self->value));
 })
 
 #define BASIC_BIN_OP(name, long_func) \
-	KRK_METHOD(BigInt,__ ## name ## __,{ \
+	KRK_METHOD(long,__ ## name ## __,{ \
 		krk_long tmp; \
-		if (IS_BigInt(argv[1])) krk_long_init_copy(tmp, AS_BigInt(argv[1])->value); \
+		if (IS_long(argv[1])) krk_long_init_copy(tmp, AS_long(argv[1])->value); \
 		else if (IS_INTEGER(argv[1])) krk_long_init_si(tmp, AS_INTEGER(argv[1])); \
 		else return NOTIMPL_VAL(); \
 		long_func(tmp,self->value,tmp); \
-		return make_BigInt(tmp); \
+		return make_long_obj(tmp); \
 	}) \
-	KRK_METHOD(BigInt,__r ## name ## __,{ \
+	KRK_METHOD(long,__r ## name ## __,{ \
 		krk_long tmp; \
-		if (IS_BigInt(argv[1])) krk_long_init_copy(tmp, AS_BigInt(argv[1])->value); \
+		if (IS_long(argv[1])) krk_long_init_copy(tmp, AS_long(argv[1])->value); \
 		else if (IS_INTEGER(argv[1])) krk_long_init_si(tmp, AS_INTEGER(argv[1])); \
 		else return NOTIMPL_VAL(); \
 		long_func(tmp,tmp,self->value); \
-		return make_BigInt(tmp); \
+		return make_long_obj(tmp); \
 	})
 
 BASIC_BIN_OP(add,krk_long_add)
@@ -141,9 +141,9 @@ BASIC_BIN_OP(mod,_krk_long_mod)
 BASIC_BIN_OP(floordiv,_krk_long_div)
 
 #define COMPARE_OP(name, comp) \
-	KRK_METHOD(BigInt,__ ## name ## __,{ \
+	KRK_METHOD(long,__ ## name ## __,{ \
 		krk_long tmp; \
-		if (IS_BigInt(argv[1])) krk_long_init_copy(tmp, AS_BigInt(argv[1])->value); \
+		if (IS_long(argv[1])) krk_long_init_copy(tmp, AS_long(argv[1])->value); \
 		else if (IS_INTEGER(argv[1])) krk_long_init_si(tmp, AS_INTEGER(argv[1])); \
 		else return NOTIMPL_VAL(); \
 		int cmp = krk_long_compare(self->value,tmp); \
@@ -160,36 +160,37 @@ COMPARE_OP(eq, ==)
 #undef BASIC_BIN_OP
 #undef COMPARE_OP
 
-KRK_METHOD(BigInt,__len__,{
+KRK_METHOD(long,__len__,{
 	return INTEGER_VAL(krk_long_sign(self->value));
 })
 
+#undef BIND_METHOD
+#define BIND_METHOD(klass,method) do { krk_defineNative(& _ ## klass->methods, #method, _ ## klass ## _ ## method); } while (0)
 KrkValue krk_module_onload_bigint(void) {
 	KrkInstance * module = krk_newInstance(vm.baseClasses->moduleClass);
 	krk_push(OBJECT_VAL(module));
 
 	KRK_DOC(module, "Very large integers.");
 
-	krk_makeClass(module, &BigInt, "BigInt", vm.baseClasses->objectClass);
-	BigInt->allocSize = sizeof(struct BigInt);
-	BigInt->_ongcsweep = _BigInt_gcsweep;
+	krk_makeClass(module, &_long, "long", vm.baseClasses->intClass);
+	_long->allocSize = sizeof(struct BigInt);
+	_long->_ongcsweep = _long_gcsweep;
 
-	BIND_METHOD(BigInt,__init__);
-	BIND_METHOD(BigInt,__str__);
-	BIND_METHOD(BigInt,__eq__);
-	BIND_METHOD(BigInt,__hash__);
-	BIND_METHOD(BigInt,__hex__);
-	BIND_METHOD(BigInt,__oct__);
-	BIND_METHOD(BigInt,__bin__);
-	BIND_METHOD(BigInt,__int__);
-	//BIND_METHOD(BigInt,__float__);
-	BIND_METHOD(BigInt,__len__);
-	krk_defineNative(&BigInt->methods,"__repr__", FUNC_NAME(BigInt,__str__));
+	BIND_METHOD(long,__init__);
+	BIND_METHOD(long,__str__);
+	BIND_METHOD(long,__eq__);
+	BIND_METHOD(long,__hash__);
+	BIND_METHOD(long,__hex__);
+	BIND_METHOD(long,__oct__);
+	BIND_METHOD(long,__bin__);
+	BIND_METHOD(long,__int__);
+	BIND_METHOD(long,__len__);
+	krk_defineNative(&_long->methods,"__repr__", FUNC_NAME(long,__str__));
 
 #define BIND_TRIPLET(name) \
-	BIND_METHOD(BigInt,__ ## name ## __); \
-	BIND_METHOD(BigInt,__r ## name ## __); \
-	krk_defineNative(&BigInt->methods,"__i" #name "__",_BigInt___ ## name ## __);
+	BIND_METHOD(long,__ ## name ## __); \
+	BIND_METHOD(long,__r ## name ## __); \
+	krk_defineNative(&_long->methods,"__i" #name "__",_long___ ## name ## __);
 	BIND_TRIPLET(add);
 	BIND_TRIPLET(sub);
 	BIND_TRIPLET(mul);
@@ -203,12 +204,12 @@ KrkValue krk_module_onload_bigint(void) {
 	BIND_TRIPLET(floordiv);
 #undef BIND_TRIPLET
 
-	BIND_METHOD(BigInt,__lt__);
-	BIND_METHOD(BigInt,__gt__);
-	BIND_METHOD(BigInt,__le__);
-	BIND_METHOD(BigInt,__ge__);
+	BIND_METHOD(long,__lt__);
+	BIND_METHOD(long,__gt__);
+	BIND_METHOD(long,__le__);
+	BIND_METHOD(long,__ge__);
 
-	krk_finalizeClass(BigInt);
+	krk_finalizeClass(_long);
 
 	return krk_pop();
 }
