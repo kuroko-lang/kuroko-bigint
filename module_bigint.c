@@ -120,7 +120,7 @@ static void _krk_long_rshift(krk_long out, krk_long val, krk_long shift) {
 }
 
 static void _krk_long_mod(krk_long out, krk_long a, krk_long b) {
-	if (krk_long_sign(b) == 0) { krk_runtimeError(vm.exceptions->valueError, "modulo by zero"); return; }
+	if (krk_long_sign(b) == 0) { krk_runtimeError(vm.exceptions->valueError, "integer division or modulo by zero"); return; }
 	krk_long garbage;
 	krk_long_init_si(garbage,0);
 	krk_long_div_rem(garbage,out,a,b);
@@ -128,7 +128,7 @@ static void _krk_long_mod(krk_long out, krk_long a, krk_long b) {
 }
 
 static void _krk_long_div(krk_long out, krk_long a, krk_long b) {
-	if (krk_long_sign(b) < 0) { krk_runtimeError(vm.exceptions->valueError, "division by zero"); return; }
+	if (krk_long_sign(b) == 0) { krk_runtimeError(vm.exceptions->valueError, "integer division or modulo by zero"); return; }
 	krk_long garbage;
 	krk_long_init_si(garbage,0);
 	krk_long_div_rem(out,garbage,a,b);

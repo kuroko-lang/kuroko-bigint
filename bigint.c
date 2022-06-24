@@ -285,6 +285,7 @@ int krk_long_sub(KrkLong * res, KrkLong * a, KrkLong * b) {
 	if (a->width == 0) {
 		krk_long_clear(res);
 		krk_long_init_copy(res,b);
+		krk_long_set_sign(res, b->width < 0 ? 1 : -1);
 		FINISH_OUTPUT(res);
 		return 0;
 	} else if (b->width == 0) {
