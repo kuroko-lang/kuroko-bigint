@@ -123,13 +123,13 @@ static int krk_long_trim(KrkLong * num) {
 }
 
 static int krk_long_compare(KrkLong * a, KrkLong * b) {
-	if (a->width > b->width) return -1;
-	if (b->width > a->width) return 1;
+	if (a->width > b->width) return 1;
+	if (b->width > a->width) return -1;
 	int sign = a->width < 0 ? -1 : 1;
 	size_t abs_width = a->width < 0 ? -a->width : a->width;
 	for (size_t i = 0; i < abs_width; ++i) {
-		if (a->digits[abs_width-i-1] > b->digits[abs_width-i-1]) return -sign; /* left is bigger */
-		if (a->digits[abs_width-i-1] < b->digits[abs_width-i-1]) return sign; /* right is bigger */
+		if (a->digits[abs_width-i-1] > b->digits[abs_width-i-1]) return sign; /* left is bigger */
+		if (a->digits[abs_width-i-1] < b->digits[abs_width-i-1]) return -sign; /* right is bigger */
 	}
 	return 0; /* they are the same */
 }
@@ -137,12 +137,12 @@ static int krk_long_compare(KrkLong * a, KrkLong * b) {
 static int krk_long_compare_abs(KrkLong * a, KrkLong * b) {
 	size_t a_width = a->width < 0 ? -a->width : a->width;
 	size_t b_width = b->width < 0 ? -b->width : b->width;
-	if (a_width > b_width) return -1;
-	if (b_width > a_width) return 1;
+	if (a_width > b_width) return 1;
+	if (b_width > a_width) return -1;
 	size_t abs_width = a_width;
 	for (size_t i = 0; i < abs_width; ++i) {
-		if (a->digits[abs_width-i-1] > b->digits[abs_width-i-1]) return -1; /* left is bigger */
-		if (a->digits[abs_width-i-1] < b->digits[abs_width-i-1]) return 1; /* right is bigger */
+		if (a->digits[abs_width-i-1] > b->digits[abs_width-i-1]) return 1; /* left is bigger */
+		if (a->digits[abs_width-i-1] < b->digits[abs_width-i-1]) return -1; /* right is bigger */
 	}
 	return 0; /* they are the same */
 }
@@ -209,11 +209,11 @@ int krk_long_add(KrkLong * res, KrkLong * a, KrkLong * b) {
 
 	if (a->width < 0 && b->width > 0) {
 		switch (krk_long_compare_abs(a,b)) {
-			case 1:
+			case -1:
 				_sub_big_small(res,b,a);
 				krk_long_set_sign(res,1);
 				return 0;
-			case -1:
+			case 1:
 				_sub_big_small(res,a,b);
 				krk_long_set_sign(res,-1);
 				return 0;
@@ -221,11 +221,11 @@ int krk_long_add(KrkLong * res, KrkLong * a, KrkLong * b) {
 		return 1;
 	} else if (a->width > 0 && b->width < 0) {
 		switch (krk_long_compare_abs(a,b)) {
-			case 1:
+			case -1:
 				_sub_big_small(res,b,a);
 				krk_long_set_sign(res,-1);
 				return 0;
-			case -1:
+			case 1:
 				_sub_big_small(res,a,b);
 				krk_long_set_sign(res,1);
 				return 0;
@@ -262,11 +262,11 @@ int krk_long_sub(KrkLong * res, KrkLong * a, KrkLong * b) {
 		case 0:
 			krk_long_clear(res);
 			return 0;
-		case -1:
+		case 1:
 			_sub_big_small(res,a,b);
 			if (a->width < 0) krk_long_set_sign(res, -1);
 			return 0;
-		case 1:
+		case -1:
 			_sub_big_small(res,b,a);
 			if (b->width > 0) krk_long_set_sign(res, -1);
 			return 0;
@@ -453,7 +453,7 @@ static int _div_abs(KrkLong * quot, KrkLong * rem, KrkLong * a, KrkLong * b) {
 
 		int is_set = _bit_is_set(&absa, _i);
 		_bit_set_zero(rem, is_set);
-		if (krk_long_compare(rem,&absb) <= 0) {
+		if (krk_long_compare(rem,&absb) >= 0) {
 			_sub_big_small(&tmp,rem,&absb);
 			_swap(rem,&tmp);
 
