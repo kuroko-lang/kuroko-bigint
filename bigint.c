@@ -72,6 +72,20 @@ int krk_long_clear_many(KrkLong *a, ...) {
 	return 0;
 }
 
+int krk_long_init_many(KrkLong *a, ...) {
+	va_list argp;
+	va_start(argp, a);
+
+	KrkLong * next = a;
+	while (next) {
+		krk_long_init_si(next, 0);
+		next = va_arg(argp, KrkLong *);
+	}
+
+	va_end(argp);
+	return 0;
+}
+
 int krk_long_init_copy(KrkLong * out, KrkLong * in) {
 	size_t abs_width = in->width < 0 ? -in->width : in->width;
 	out->width = in->width;
@@ -195,15 +209,32 @@ static int _sub_big_small(KrkLong * res, KrkLong * a, KrkLong * b) {
 	return 0;
 }
 
+static int _swap(KrkLong * a, KrkLong * b) {
+	ssize_t width = a->width;
+	uint32_t * digits = a->digits;
+	a->width = b->width;
+	a->digits = b->digits;
+	b->width = width;
+	b->digits = digits;
+	return 0;
+}
+
+#define PREP_OUTPUT(res,a,b) KrkLong _tmp_out_ ## res, *_swap_out_ ## res = NULL; do { if (res == a || res == b) { krk_long_init_si(&_tmp_out_ ## res, 0); res = &_tmp_out_ ## res; _swap_out_ ## res = (res == a) ? a : b; } } while (0)
+#define PREP_OUTPUT1(res,a) KrkLong _tmp_out_ ## res, *_swap_out_ ## res = NULL; do { if (res == a) { krk_long_init_si(&_tmp_out_ ## res, 0); res = &_tmp_out_ ## res; _swap_out_ ## res = a; } } while (0)
+#define FINISH_OUTPUT(res) do { if (_swap_out_ ## res) { _swap(_swap_out_ ## res, res); krk_long_clear(&_tmp_out_ ## res); } } while (0)
+
 int krk_long_add(KrkLong * res, KrkLong * a, KrkLong * b) {
-	/* TODO res == a || res == b */
+	PREP_OUTPUT(res,a,b);
+
 	if (a->width == 0) {
 		krk_long_clear(res);
 		krk_long_init_copy(res,b);
+		FINISH_OUTPUT(res);
 		return 0;
 	} else if (b->width == 0) {
 		krk_long_clear(res);
 		krk_long_init_copy(res,a);
+		FINISH_OUTPUT(res);
 		return 0;
 	}
 
@@ -212,10 +243,12 @@ int krk_long_add(KrkLong * res, KrkLong * a, KrkLong * b) {
 			case -1:
 				_sub_big_small(res,b,a);
 				krk_long_set_sign(res,1);
+				FINISH_OUTPUT(res);
 				return 0;
 			case 1:
 				_sub_big_small(res,a,b);
 				krk_long_set_sign(res,-1);
+				FINISH_OUTPUT(res);
 				return 0;
 		}
 		return 1;
@@ -224,36 +257,47 @@ int krk_long_add(KrkLong * res, KrkLong * a, KrkLong * b) {
 			case -1:
 				_sub_big_small(res,b,a);
 				krk_long_set_sign(res,-1);
+				FINISH_OUTPUT(res);
 				return 0;
 			case 1:
 				_sub_big_small(res,a,b);
 				krk_long_set_sign(res,1);
+				FINISH_OUTPUT(res);
 				return 0;
 		}
+		FINISH_OUTPUT(res);
 		return 1;
 	}
 
 	/* sign must match for this, so take it from whichever */
 	int sign = a->width < 0 ? -1 : 1;
-	if (krk_long_add_ignore_sign(res,a,b)) return 1;
+	if (krk_long_add_ignore_sign(res,a,b)) {
+		FINISH_OUTPUT(res);
+		return 1;
+	}
 	krk_long_set_sign(res,sign);
+	FINISH_OUTPUT(res);
 	return 0;
 }
 
 int krk_long_sub(KrkLong * res, KrkLong * a, KrkLong * b) {
+	PREP_OUTPUT(res,a,b);
 	if (a->width == 0) {
 		krk_long_clear(res);
 		krk_long_init_copy(res,b);
+		FINISH_OUTPUT(res);
 		return 0;
 	} else if (b->width == 0) {
 		krk_long_clear(res);
 		krk_long_init_copy(res,a);
+		FINISH_OUTPUT(res);
 		return 0;
 	}
 
 	if (a->width < 0 && b->width > 0 || a->width > 0 && b->width < 0) {
-		if (krk_long_add_ignore_sign(res,a,b)) return 1;
+		if (krk_long_add_ignore_sign(res,a,b)) { FINISH_OUTPUT(res); return 1; }
 		krk_long_set_sign(res,a->width < 0 ? -1 : 1);
+		FINISH_OUTPUT(res);
 		return 0;
 	}
 
@@ -261,14 +305,17 @@ int krk_long_sub(KrkLong * res, KrkLong * a, KrkLong * b) {
 	switch (krk_long_compare_abs(a,b)) {
 		case 0:
 			krk_long_clear(res);
+			FINISH_OUTPUT(res);
 			return 0;
 		case 1:
 			_sub_big_small(res,a,b);
 			if (a->width < 0) krk_long_set_sign(res, -1);
+			FINISH_OUTPUT(res);
 			return 0;
 		case -1:
 			_sub_big_small(res,b,a);
 			if (b->width > 0) krk_long_set_sign(res, -1);
+			FINISH_OUTPUT(res);
 			return 0;
 	}
 }
@@ -307,19 +354,26 @@ static int _mul_abs(KrkLong * res, KrkLong * a, KrkLong * b) {
 }
 
 int krk_long_mul(KrkLong * res, KrkLong * a, KrkLong * b) {
+	PREP_OUTPUT(res,a,b);
+
 	if (a->width == 0) {
 		krk_long_clear(res);
 		krk_long_init_copy(res,a);
+		FINISH_OUTPUT(res);
 		return 0;
 	}
 
 	if (b->width == 0) {
 		krk_long_clear(res);
 		krk_long_init_copy(res,b);
+		FINISH_OUTPUT(res);
 		return 0;
 	}
 
-	if (_mul_abs(res,a,b)) return 1;
+	if (_mul_abs(res,a,b)) {
+		FINISH_OUTPUT(res);
+		return 1;
+	}
 
 	if (a->width < 0 && b->width < 0 || a->width > 0 && b->width > 0) {
 		krk_long_set_sign(res,1);
@@ -327,16 +381,7 @@ int krk_long_mul(KrkLong * res, KrkLong * a, KrkLong * b) {
 		krk_long_set_sign(res,-1);
 	}
 
-	return 0;
-}
-
-static int _swap(KrkLong * a, KrkLong * b) {
-	ssize_t width = a->width;
-	uint32_t * digits = a->digits;
-	a->width = b->width;
-	a->digits = b->digits;
-	b->width = width;
-	b->digits = digits;
+	FINISH_OUTPUT(res);
 	return 0;
 }
 
@@ -403,7 +448,7 @@ static int _bit_set_zero(KrkLong * num, int val) {
 	return 0;
 }
 
-int krk_bit_set(KrkLong * num, size_t bit) {
+int krk_long_bit_set(KrkLong * num, size_t bit) {
 	size_t abs_width = num->width < 0 ? -num->width : num->width;
 	size_t digit_offset = bit / DIGIT_SHIFT;
 	size_t digit_bit    = bit % DIGIT_SHIFT;
@@ -457,7 +502,7 @@ static int _div_abs(KrkLong * quot, KrkLong * rem, KrkLong * a, KrkLong * b) {
 			_sub_big_small(&tmp,rem,&absb);
 			_swap(rem,&tmp);
 
-			krk_bit_set(quot, _i);
+			krk_long_bit_set(quot, _i);
 		}
 	}
 
@@ -467,7 +512,13 @@ static int _div_abs(KrkLong * quot, KrkLong * rem, KrkLong * a, KrkLong * b) {
 }
 
 int krk_long_div_rem(KrkLong * quot, KrkLong * rem, KrkLong * a, KrkLong * b) {
-	if (_div_abs(quot,rem,a,b)) return 1;
+	PREP_OUTPUT(quot,a,b);
+	PREP_OUTPUT(rem,a,b);
+	if (_div_abs(quot,rem,a,b)) {
+		FINISH_OUTPUT(rem);
+		FINISH_OUTPUT(quot);
+		return 1;
+	}
 
 	if ((a->width < 0) != (b->width < 0)) {
 		/* Round down if remainder */
@@ -494,13 +545,17 @@ int krk_long_div_rem(KrkLong * quot, KrkLong * rem, KrkLong * a, KrkLong * b) {
 		krk_long_set_sign(rem, -1);
 	}
 
+	FINISH_OUTPUT(rem);
+	FINISH_OUTPUT(quot);
 	return 0;
 }
 
 int krk_long_abs(KrkLong * out, KrkLong * in) {
+	PREP_OUTPUT1(out,in);
 	krk_long_clear(out);
 	krk_long_init_copy(out, in);
 	krk_long_set_sign(out, 1);
+	FINISH_OUTPUT(out);
 	return 0;
 }
 
@@ -526,10 +581,28 @@ uint32_t krk_long_short(KrkLong * num) {
 	return num->digits[0];
 }
 
+int64_t krk_long_medium(KrkLong * num) {
+	if (num->width == 0) return 0;
+
+	if (num->width < 0) {
+		uint64_t val = num->digits[0];
+		if (num->width < 1) {
+			val |= (num->digits[1]) << 31;
+		}
+		return -val;
+	} else {
+		uint64_t val = num->digits[0];
+		if (num->width > 1) {
+			val |= (num->digits[1]) << 31;
+		}
+		return val;
+	}
+}
+
 static int do_bin_op(KrkLong * res, KrkLong * a, KrkLong * b, char op) {
 	size_t awidth = a->width < 0 ? -a->width : a->width;
 	size_t bwidth = b->width < 0 ? -b->width : b->width;
-	size_t owidth = ((awidth < bwidth) ? awidth : bwidth) + 1;
+	size_t owidth = ((awidth > bwidth) ? awidth : bwidth) + 1;
 
 	int aneg = (a->width < 0);
 	int bneg = (b->width < 0);
@@ -578,38 +651,51 @@ static int do_bin_op(KrkLong * res, KrkLong * a, KrkLong * b, char op) {
 }
 
 int krk_long_or(KrkLong * res, KrkLong * a, KrkLong * b) {
+	PREP_OUTPUT(res,a,b);
 	if (a->width == 0) {
 		krk_long_clear(res);
 		krk_long_init_copy(res,b);
+		FINISH_OUTPUT(res);
 		return 0;
 	} else if (b->width == 0) {
 		krk_long_clear(res);
 		krk_long_init_copy(res,a);
+		FINISH_OUTPUT(res);
 		return 0;
 	}
 
-	return do_bin_op(res,a,b,'|');
+	int out = do_bin_op(res,a,b,'|');
+	FINISH_OUTPUT(res);
+	return out;
 }
 
 int krk_long_xor(KrkLong * res, KrkLong * a, KrkLong * b) {
-	return do_bin_op(res,a,b,'^');
+	PREP_OUTPUT(res,a,b);
+	int out = do_bin_op(res,a,b,'^');
+	FINISH_OUTPUT(res);
+	return out;
 }
 
 int krk_long_and(KrkLong * res, KrkLong * a, KrkLong * b) {
+	PREP_OUTPUT(res,a,b);
 	if (a->width == 0) {
 		krk_long_clear(res);
 		krk_long_init_copy(res,a);
+		FINISH_OUTPUT(res);
 		return 0;
 	} else if (b->width == 0) {
 		krk_long_clear(res);
 		krk_long_init_copy(res,b);
+		FINISH_OUTPUT(res);
 		return 0;
 	}
 
-	return do_bin_op(res,a,b,'&');
+	int out = do_bin_op(res,a,b,'&');
+	FINISH_OUTPUT(res);
+	return out;
 }
 
-char * krk_long_to_str(KrkLong * n, int _base, const char * prefix) {
+char * krk_long_to_str(KrkLong * n, int _base, const char * prefix, size_t *size) {
 	static const char vals[] = "0123456789abcdef";
 	KrkLong abs, mod, base, scratch;
 
@@ -650,21 +736,10 @@ char * krk_long_to_str(KrkLong * n, int _base, const char * prefix) {
 	free(tmp);
 
 	krk_long_clear_many(&abs,&mod,&base,&scratch,NULL);
+	*size = strlen(rev);
 
 	return rev;
 }
-
-#define PRINTER(name,base,prefix) \
-	static void print_base_ ## name (FILE * f, KrkLong * num) { \
-		char * s = krk_long_to_str(num, base, prefix); \
-		fprintf(f, "%s", s); \
-		free(s); \
-	}
-
-PRINTER(str,10,"")
-PRINTER(hex,16,"x0")
-PRINTER(oct,8,"o0")
-PRINTER(bin,2,"b0")
 
 static int is_valid(int base, char c) {
 	if (c == '_') return 1;
@@ -747,6 +822,20 @@ int krk_long_parse_string(const char * str, KrkLong * num) {
 
 	krk_long_clear_many(&_base, &scratch1, &scratch2, NULL);
 }
+
+#ifndef AS_LIB
+#define PRINTER(name,base,prefix) \
+	static void print_base_ ## name (FILE * f, KrkLong * num) { \
+		size_t unused; \
+		char * s = krk_long_to_str(num, base, prefix, &unused); \
+		fprintf(f, "%s", s); \
+		free(s); \
+	}
+
+PRINTER(str,10,"")
+PRINTER(hex,16,"x0")
+PRINTER(oct,8,"o0")
+PRINTER(bin,2,"b0")
 
 static void verbose_operation(char * op, int (*func)(KrkLong*,KrkLong*,KrkLong*), KrkLong *c, KrkLong *a, KrkLong *b) {
 	print_base_str(stderr, a);
@@ -867,3 +956,4 @@ int main(int argc, char * argv[]) {
 
 	return 0;
 }
+#endif
