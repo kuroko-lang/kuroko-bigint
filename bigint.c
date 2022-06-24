@@ -1,7 +1,9 @@
+#include <assert.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
 
 #define DIGIT_SHIFT 31
 #define DIGIT_MAX   0x7FFFFFFF
@@ -50,7 +52,7 @@ int krk_long_init_si(KrkLong * num, int64_t val) {
 }
 
 int krk_long_clear(KrkLong * num) {
-	if (num->width) free(num->digits);
+	if (num->digits) free(num->digits);
 	num->width = 0;
 	num->digits = NULL;
 	return 0;
@@ -68,21 +70,6 @@ int krk_long_clear_many(KrkLong *a, ...) {
 
 	va_end(argp);
 	return 0;
-}
-
-static void printnum(FILE * out, KrkLong * a) {
-	fprintf(out, "[%ld,(", a->width);
-
-	size_t abs_width = a->width < 0 ? -a->width : a->width;
-
-	for (size_t i = 0; i < abs_width; ++i) {
-		fprintf(out, "%#x", a->digits[i]);
-		if (i + 1 != abs_width) {
-			fprintf(out, ",");
-		}
-	}
-
-	fprintf(out, ")]");
 }
 
 int krk_long_init_copy(KrkLong * out, KrkLong * in) {
@@ -112,8 +99,14 @@ int krk_long_resize(KrkLong * num, ssize_t newdigits) {
 	return 0;
 }
 
+static int krk_long_set_sign(KrkLong * num, int sign) {
+	num->width = num->width < 0 ? (-num->width) * sign : num->width * sign;
+	return 0;
+}
+
 static int krk_long_trim(KrkLong * num) {
-	size_t owidth = num->width < 0 ? -num->width : num->width;
+	int invert = num->width < 0;
+	size_t owidth = invert ? -num->width : num->width;
 	size_t redundant = 0;
 	for (size_t i = 0; i < owidth; i++) {
 		if (num->digits[owidth-i-1] == 0) {
@@ -125,16 +118,18 @@ static int krk_long_trim(KrkLong * num) {
 
 	if (redundant) {
 		krk_long_resize(num, owidth - redundant);
+		if (invert) krk_long_set_sign(num, -1);
 	}
 }
 
 static int krk_long_compare(KrkLong * a, KrkLong * b) {
 	if (a->width > b->width) return -1;
 	if (b->width > a->width) return 1;
+	int sign = a->width < 0 ? -1 : 1;
 	size_t abs_width = a->width < 0 ? -a->width : a->width;
 	for (size_t i = 0; i < abs_width; ++i) {
-		if (a->digits[abs_width-i-1] > b->digits[abs_width-i-1]) return -1; /* left is bigger */
-		if (a->digits[abs_width-i-1] < b->digits[abs_width-i-1]) return 1; /* right is bigger */
+		if (a->digits[abs_width-i-1] > b->digits[abs_width-i-1]) return -sign; /* left is bigger */
+		if (a->digits[abs_width-i-1] < b->digits[abs_width-i-1]) return sign; /* right is bigger */
 	}
 	return 0; /* they are the same */
 }
@@ -150,11 +145,6 @@ static int krk_long_compare_abs(KrkLong * a, KrkLong * b) {
 		if (a->digits[abs_width-i-1] < b->digits[abs_width-i-1]) return 1; /* right is bigger */
 	}
 	return 0; /* they are the same */
-}
-
-static int krk_long_set_sign(KrkLong * num, int sign) {
-	num->width = num->width < 0 ? (-num->width) * sign : num->width * sign;
-	return 0;
 }
 
 static int krk_long_add_ignore_sign(KrkLong * res, KrkLong * a, KrkLong * b) {
@@ -202,12 +192,6 @@ static int _sub_big_small(KrkLong * res, KrkLong * a, KrkLong * b) {
 
 	krk_long_trim(res);
 
-	return 0;
-}
-
-static int _sub_small_big(KrkLong * res, KrkLong * a, KrkLong * b) {
-	_sub_big_small(res,b,a);
-	res->width = -res->width;
 	return 0;
 }
 
@@ -274,14 +258,18 @@ int krk_long_sub(KrkLong * res, KrkLong * a, KrkLong * b) {
 	}
 
 	/* Which is bigger? */
-	switch (krk_long_compare(a,b)) {
+	switch (krk_long_compare_abs(a,b)) {
 		case 0:
 			krk_long_clear(res);
 			return 0;
 		case -1:
-			return _sub_big_small(res,a,b);
+			_sub_big_small(res,a,b);
+			if (a->width < 0) krk_long_set_sign(res, -1);
+			return 0;
 		case 1:
-			return _sub_small_big(res,a,b);
+			_sub_big_small(res,b,a);
+			if (b->width > 0) krk_long_set_sign(res, -1);
+			return 0;
 	}
 }
 
@@ -300,8 +288,6 @@ static int _mul_abs(KrkLong * res, KrkLong * a, KrkLong * b) {
 
 	krk_long_resize(res, awidth+bwidth);
 	krk_long_zero(res);
-
-	fprintf(stderr, "width = %zu\n", awidth+bwidth);
 
 	for (size_t i = 0; i < bwidth; ++i) {
 		uint64_t b_digit = b->digits[i];
@@ -346,7 +332,7 @@ int krk_long_mul(KrkLong * res, KrkLong * a, KrkLong * b) {
 
 static int _swap(KrkLong * a, KrkLong * b) {
 	ssize_t width = a->width;
-	uint32_t digits = a->digits;
+	uint32_t * digits = a->digits;
 	a->width = b->width;
 	a->digits = b->digits;
 	b->width = width;
@@ -372,7 +358,7 @@ static int _lshift_one(KrkLong * out, KrkLong * in) {
 	int carry = 0;
 
 	for (size_t i = 0; i < abs_width; ++i) {
-		out->digits[i] = (in->digits[i] << 1) + carry;
+		out->digits[i] = ((in->digits[i] << 1) + carry) & DIGIT_MAX;
 		carry = (in->digits[i] >> (DIGIT_SHIFT -1));
 	}
 
@@ -388,6 +374,50 @@ static size_t _bits_in(KrkLong * num) {
 
 	size_t abs_width = num->width < 0 ? -num->width : num->width;
 
+	/* Top bit in digits[abs_width-1] */
+	size_t c = 0;
+	uint32_t digit = num->digits[abs_width-1];
+	while (digit) {
+		c++;
+		digit >>= 1;
+	}
+
+	return c + (abs_width-1) * DIGIT_SHIFT;
+}
+
+static size_t _bit_is_set(KrkLong * num, size_t bit) {
+	size_t abs_width = num->width < 0 ? -num->width : num->width;
+	size_t digit_offset = bit / DIGIT_SHIFT;
+	size_t digit_bit    = bit % DIGIT_SHIFT;
+	return !!(num->digits[digit_offset] & (1 << digit_bit));
+}
+
+static int _bit_set_zero(KrkLong * num, int val) {
+	if (num->width == 0) {
+		krk_long_clear(num);
+		krk_long_init_si(num, !!val);
+		return 0;
+	}
+
+	num->digits[0] = (num->digits[0] & ~1) | (!!val);
+	return 0;
+}
+
+int krk_bit_set(KrkLong * num, size_t bit) {
+	size_t abs_width = num->width < 0 ? -num->width : num->width;
+	size_t digit_offset = bit / DIGIT_SHIFT;
+	size_t digit_bit    = bit % DIGIT_SHIFT;
+
+	if (digit_offset >= abs_width) {
+		krk_long_resize(num, digit_offset+1);
+		for (size_t i = abs_width; i < digit_offset + 1; ++i) {
+			num->digits[i] = 0;
+		}
+	}
+
+	num->digits[digit_offset] |= (1 << digit_bit);
+
+	return 0;
 }
 
 static int _div_abs(KrkLong * quot, KrkLong * rem, KrkLong * a, KrkLong * b) {
@@ -403,31 +433,340 @@ static int _div_abs(KrkLong * quot, KrkLong * rem, KrkLong * a, KrkLong * b) {
 	size_t awidth = a->width < 0 ? -a->width : a->width;
 	size_t bwidth = b->width < 0 ? -b->width : b->width;
 
-	if (awidth < bwidth) {
-		/* Small a, quot still 0, remainder is now a */
-		krk_long_init_copy(rem, a);
-		krk_long_set_sign(rem, 1); /* Ensure positive sign */
-		return 0;
-	}
-
 	KrkLong tmp;
 	krk_long_init_si(&tmp, 0);
 
-	for (size_t i = 0; i < bwidth; ++i) {
+	size_t bits = _bits_in(a);
+
+	KrkLong absa, absb;
+	krk_long_init_copy(&absa, a);
+	krk_long_set_sign(&absa, 1);
+	krk_long_init_copy(&absb, b);
+	krk_long_set_sign(&absb, 1);
+
+	for (size_t i = 0; i < bits; ++i) {
+		size_t _i = bits - i - 1;
+
 		/* Shift remainder by one */
 		_lshift_one(&tmp, rem);
 		_swap(rem,&tmp);
 
+		int is_set = _bit_is_set(&absa, _i);
+		_bit_set_zero(rem, is_set);
+		if (krk_long_compare(rem,&absb) <= 0) {
+			_sub_big_small(&tmp,rem,&absb);
+			_swap(rem,&tmp);
+
+			krk_bit_set(quot, _i);
+		}
 	}
+
+	krk_long_clear_many(&tmp,&absa,&absb,NULL);
+
+	return 0;
+}
+
+int krk_long_div_rem(KrkLong * quot, KrkLong * rem, KrkLong * a, KrkLong * b) {
+	if (_div_abs(quot,rem,a,b)) return 1;
+
+	if ((a->width < 0) != (b->width < 0)) {
+		/* Round down if remainder */
+		if (rem->width) {
+			KrkLong one, scratch;
+			krk_long_init_si(&one, 1);
+			krk_long_init_si(&scratch, 0);
+
+			/* quot -= 1 */
+			krk_long_add(&scratch, quot, &one);
+			_swap(quot, &scratch);
+
+			_sub_big_small(&scratch, b, rem);
+			_swap(rem, &scratch);
+
+			krk_long_clear_many(&one,&scratch,NULL);
+		}
+
+		/* Signs are different, negate and round down if necessary */
+		krk_long_set_sign(quot, -1);
+	}
+
+	if (b->width < 0) {
+		krk_long_set_sign(rem, -1);
+	}
+
+	return 0;
+}
+
+int krk_long_abs(KrkLong * out, KrkLong * in) {
+	krk_long_clear(out);
+	krk_long_init_copy(out, in);
+	krk_long_set_sign(out, 1);
+	return 0;
+}
+
+int krk_long_sign(KrkLong * num) {
+	if (num->width == 0) return 0;
+	return num->width < 0 ? -1 : 1;
+}
+
+size_t krk_long_digits_in_base(KrkLong * num, int base) {
+	if (num->width == 0) return 1;
+
+	size_t bits = _bits_in(num);
+
+	if (base <  4)  return bits;
+	if (base <  8)  return (bits+1)/2;
+	if (base < 16)  return (bits+2)/3;
+	if (base == 16) return (bits+3)/4;
+	return 0;
+}
+
+uint32_t krk_long_short(KrkLong * num) {
+	if (num->width == 0) return 0;
+	return num->digits[0];
+}
+
+static int do_bin_op(KrkLong * res, KrkLong * a, KrkLong * b, char op) {
+	size_t awidth = a->width < 0 ? -a->width : a->width;
+	size_t bwidth = b->width < 0 ? -b->width : b->width;
+	size_t owidth = ((awidth < bwidth) ? awidth : bwidth) + 1;
+
+	int aneg = (a->width < 0);
+	int bneg = (b->width < 0);
+	int rneg = 0;
+
+	switch (op) {
+		case '|': rneg = aneg | bneg; break;
+		case '^': rneg = aneg ^ bneg; break;
+		case '&': rneg = aneg & bneg; break;
+	}
+
+	krk_long_resize(res, owidth);
+
+	int acarry = aneg ? 1 : 0;
+	int bcarry = bneg ? 1 : 0;
+	int rcarry = rneg ? 1 : 0;
+
+	for (size_t i = 0; i < owidth; ++i) {
+		uint32_t a_digit = (i < awidth ? a->digits[i] : 0);
+		a_digit = aneg ? ((a_digit ^ DIGIT_MAX) + acarry) : a_digit;
+		acarry = a_digit >> DIGIT_SHIFT;
+
+		uint32_t b_digit = (i < bwidth ? b->digits[i] : 0);
+		b_digit = bneg ? ((b_digit ^ DIGIT_MAX) + bcarry) : b_digit;
+		bcarry = b_digit >> DIGIT_SHIFT;
+
+		uint32_t r;
+		switch (op) {
+			case '|': r = a_digit | b_digit; break;
+			case '^': r = a_digit ^ b_digit; break;
+			case '&': r = a_digit & b_digit; break;
+		}
+
+		r = rneg ? (((r & DIGIT_MAX) ^ DIGIT_MAX) + rcarry) : r;
+		res->digits[i] = r & DIGIT_MAX;
+		rcarry = r >> DIGIT_SHIFT;
+	}
+
+	krk_long_trim(res);
+
+	if (rneg) {
+		krk_long_set_sign(res,-1);
+	}
+
+	return 0;
+}
+
+int krk_long_or(KrkLong * res, KrkLong * a, KrkLong * b) {
+	if (a->width == 0) {
+		krk_long_clear(res);
+		krk_long_init_copy(res,b);
+		return 0;
+	} else if (b->width == 0) {
+		krk_long_clear(res);
+		krk_long_init_copy(res,a);
+		return 0;
+	}
+
+	return do_bin_op(res,a,b,'|');
+}
+
+int krk_long_xor(KrkLong * res, KrkLong * a, KrkLong * b) {
+	return do_bin_op(res,a,b,'^');
+}
+
+int krk_long_and(KrkLong * res, KrkLong * a, KrkLong * b) {
+	if (a->width == 0) {
+		krk_long_clear(res);
+		krk_long_init_copy(res,a);
+		return 0;
+	} else if (b->width == 0) {
+		krk_long_clear(res);
+		krk_long_init_copy(res,b);
+		return 0;
+	}
+
+	return do_bin_op(res,a,b,'&');
+}
+
+char * krk_long_to_str(KrkLong * n, int _base, const char * prefix) {
+	static const char vals[] = "0123456789abcdef";
+	KrkLong abs, mod, base, scratch;
+
+	krk_long_init_si(&abs, 0);
+	krk_long_init_si(&mod, 0);
+	krk_long_init_si(&base, _base);
+	krk_long_init_si(&scratch, 0);
+
+	krk_long_abs(&abs, n);
+
+	int sign = krk_long_sign(n);   /* -? +? 0? */
+
+	size_t len = (sign == -1 ? 1 : 0) + krk_long_digits_in_base(&abs,_base) + strlen(prefix) + 1;
+	char * tmp = malloc(len);
+	char * writer = tmp;
+
+	if (sign == 0) {
+		*writer++ = '0';
+	} else {
+		while (krk_long_sign(&abs) > 0) {
+			krk_long_div_rem(&scratch,&mod,&abs,&base);
+			_swap(&abs,&scratch);
+			*writer++ = vals[krk_long_short(&mod)];
+		}
+	}
+
+	while (*prefix) { *writer++ = *prefix++; }
+	if (sign < 0) *writer++ = '-';
+
+	char * rev = malloc(len);
+	char * out = rev;
+	while (writer != tmp) {
+		writer--;
+		*out++ = *writer;
+	}
+	*out = '\0';
+
+	free(tmp);
+
+	krk_long_clear_many(&abs,&mod,&base,&scratch,NULL);
+
+	return rev;
+}
+
+#define PRINTER(name,base,prefix) \
+	static void print_base_ ## name (FILE * f, KrkLong * num) { \
+		char * s = krk_long_to_str(num, base, prefix); \
+		fprintf(f, "%s", s); \
+		free(s); \
+	}
+
+PRINTER(str,10,"")
+PRINTER(hex,16,"x0")
+PRINTER(oct,8,"o0")
+PRINTER(bin,2,"b0")
+
+static int is_valid(int base, char c) {
+	if (c < '0') return 0;
+	if (base <= 10) {
+		return c < ('0' + base);
+	}
+
+	if (c >= 'a' && c < 'a' + (base - 10)) return 1;
+	if (c >= 'A' && c < 'A' + (base - 10)) return 1;
+	if (c >= '0' && c <= '9') return 1;
+	return 0;
+}
+
+static int convert_digit(char c) {
+	if (c >= '0' && c <= '9') {
+		return c - '0';
+	}
+	if (c >= 'a' && c <= 'z') {
+		return c - 'a' + 0xa;
+	}
+	if (c >= 'A' && c <= 'Z') {
+		return c - 'A' + 0xa;
+	}
+	return 0;
+}
+
+int krk_long_parse_string(const char * str, KrkLong * num) {
+	const char * c = str;
+	int base = 10;
+	int sign = 1;
+	while (*c && (*c == ' ' || *c == '\t')) c++;
+
+	if (*c == '-') {
+		sign = -1;
+		c++;
+	} else if (*c == '+') {
+		c++;
+	}
+
+	if (*c == '0') {
+		c++;
+
+		if (*c == 'x') {
+			base = 16;
+			c++;
+		} else if (*c == 'o') {
+			base = 8;
+			c++;
+		} else if (*c == 'b') {
+			base = 2;
+			c++;
+		}
+	}
+
+	krk_long_init_si(num, 0);
+
+	KrkLong _base, scratch1, scratch2;
+	krk_long_init_si(&_base, base);
+	krk_long_init_si(&scratch1, 0);
+	krk_long_init_si(&scratch2, 0);
+
+	while (is_valid(base, *c)) {
+		krk_long_mul(&scratch1, num, &_base);
+		_swap(num,&scratch1);
+		krk_long_clear(&scratch1);
+		krk_long_init_si(&scratch1, convert_digit(*c));
+		krk_long_add(&scratch2, num, &scratch1);
+		_swap(num,&scratch2);
+		c++;
+	}
+
+	if (sign == -1) {
+		krk_long_set_sign(num, -1);
+	}
+
+	krk_long_clear_many(&_base, &scratch1, &scratch2, NULL);
 }
 
 static void verbose_operation(char * op, int (*func)(KrkLong*,KrkLong*,KrkLong*), KrkLong *c, KrkLong *a, KrkLong *b) {
-	printnum(stderr, a);
+	print_base_str(stderr, a);
 	fprintf(stderr, " %s ", op);
-	printnum(stderr, b);
-	fprintf(stderr, " = ");
+	print_base_str(stderr, b);
+	fprintf(stderr, " == ");
 	func(c,a,b);
-	printnum(stderr, c);
+	print_base_str(stderr, c);
+	fprintf(stderr, "\n");
+}
+
+static void verbose_div(KrkLong *c, KrkLong * d, KrkLong *a, KrkLong *b) {
+	krk_long_div_rem(c,d,a,b);
+
+	print_base_str(stderr, a);
+	fprintf(stderr, " // ");
+	print_base_str(stderr, b);
+	fprintf(stderr, " == ");
+	print_base_str(stderr, c);
+	fprintf(stderr, "\n");
+	print_base_str(stderr, a);
+	fprintf(stderr, " %% ");
+	print_base_str(stderr, b);
+	fprintf(stderr, " == ");
+	print_base_str(stderr, d);
 	fprintf(stderr, "\n");
 }
 
@@ -439,8 +778,17 @@ static void verbose_operation(char * op, int (*func)(KrkLong*,KrkLong*,KrkLong*)
 	krk_long_clear_many(&a,&b,&c,NULL); \
 } while (0)
 
+#define do_div(left,right) do { \
+	krk_long_parse_string(#left,&a); \
+	krk_long_parse_string(#right,&b); \
+	krk_long_init_si(&c, 0); \
+	krk_long_init_si(&d, 0); \
+	verbose_div(&c,&d,&a,&b); \
+	krk_long_clear_many(&a,&b,&c,&d,NULL); \
+} while (0)
+
 int main(int argc, char * argv[]) {
-	KrkLong a, b, c;
+	KrkLong a, b, c, d;
 
 	do_calc(+,add,0x7FFFeeee,0x7EEEffff);
 	do_calc(+,add,0x7eeeFFFF,0x7fffeeee);
@@ -453,6 +801,8 @@ int main(int argc, char * argv[]) {
 	verbose_operation("+",krk_long_add,&c,&a,&b);
 	verbose_operation("-",krk_long_sub,&a,&c,&b);
 	verbose_operation("-",krk_long_sub,&b,&c,&a);
+
+	krk_long_clear_many(&a,&b,&c,NULL);
 
 	do_calc(+,add,42,-32);
 	do_calc(+,add,32,-42);
@@ -473,9 +823,42 @@ int main(int argc, char * argv[]) {
 	verbose_operation("*",krk_long_mul,&c,&a,&b);
 	verbose_operation("*",krk_long_mul,&b,&c,&a);
 
+	krk_long_clear_many(&a,&b,&c,NULL);
+
 	do_calc(*,mul,0x7eeeFFFF,-0x7fffeeee);
 	do_calc(*,mul,-0x7eeeFFFF,-0x7fffeeee);
 	do_calc(*,mul,-0x7eeeFFFF,0x7fffeeee);
+
+	do_div(9324932533295, 392);
+	do_div(0x953289537218528853293826328432432, 0x823852983523);
+	do_div(2325,-2);
+	do_div(2,-4);
+	do_div(5,7);
+	do_div(5,-7);
+	do_div(-5,7);
+	do_div(-5,-7);
+
+	krk_long_parse_string("0x123456789abcdef0123456789abcdef",&a);
+	print_base_str(stderr, &a);
+	fprintf(stderr, " == ");
+	print_base_hex(stderr, &a);
+	fprintf(stderr, "\n");
+
+	krk_long_clear(&a);
+
+	do_calc(|,or,0x1234,0x2345);
+	do_calc(&,and,0x1234,0x2345);
+	do_calc(^,xor,0x1234,0x2345);
+
+	do_calc(|,or,-632632,-25832);
+	do_calc(&,and,-632632,-25832);
+	do_calc(^,xor,-632632,-25832);
+	do_calc(^,xor,-632632,25832);
+	do_calc(^,xor,632632,-25832);
+
+	do_calc(|,or,0x12345678abcdef01,-0x1245abcdef);
+	do_calc(^,xor,0x12345678abcdef01,-0x1245abcdef);
+	do_calc(&,and,0x12345678abcdef01,-0x1245abcdef);
 
 	return 0;
 }
