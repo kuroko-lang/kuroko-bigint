@@ -667,6 +667,7 @@ PRINTER(oct,8,"o0")
 PRINTER(bin,2,"b0")
 
 static int is_valid(int base, char c) {
+	if (c == '_') return 1;
 	if (c < '0') return 0;
 	if (base <= 10) {
 		return c < ('0' + base);
@@ -727,6 +728,10 @@ int krk_long_parse_string(const char * str, KrkLong * num) {
 	krk_long_init_si(&scratch2, 0);
 
 	while (is_valid(base, *c)) {
+		if (*c == '_') {
+			c++;
+			continue;
+		}
 		krk_long_mul(&scratch1, num, &_base);
 		_swap(num,&scratch1);
 		krk_long_clear(&scratch1);
