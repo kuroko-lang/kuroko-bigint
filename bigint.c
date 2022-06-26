@@ -377,7 +377,7 @@ static int krk_long_mul(KrkLong * res, const KrkLong * a, const KrkLong * b) {
 		return 1;
 	}
 
-	if (a->width < 0 && b->width < 0 || a->width > 0 && b->width > 0) {
+	if (a->width < 0 == b->width < 0) {
 		krk_long_set_sign(res,1);
 	} else {
 		krk_long_set_sign(res,-1);
@@ -479,7 +479,17 @@ static int _div_abs(KrkLong * quot, KrkLong * rem, const KrkLong * a, const KrkL
 	size_t awidth = a->width < 0 ? -a->width : a->width;
 	size_t bwidth = b->width < 0 ? -b->width : b->width;
 
-	size_t bits = _bits_in(a);
+	if (bwidth == 1 && b->digits[0] == 1) {
+		krk_long_init_copy(quot, a);
+		krk_long_set_sign(quot, 1);
+		return 0;
+	}
+
+	if (awidth < bwidth) {
+		krk_long_init_copy(rem, a);
+		krk_long_set_sign(rem, 1);
+		return 0;
+	}
 
 	KrkLong absa, absb;
 	krk_long_init_copy(&absa, a);
@@ -487,6 +497,24 @@ static int _div_abs(KrkLong * quot, KrkLong * rem, const KrkLong * a, const KrkL
 	krk_long_init_copy(&absb, b);
 	krk_long_set_sign(&absb, 1);
 
+	if (bwidth == 1) {
+		uint64_t remainder = 0;
+		for (size_t i = 0; i < awidth; ++i) {
+			size_t _i = awidth - i - 1;
+			remainder = (remainder << DIGIT_SHIFT) | absa.digits[_i];
+			absa.digits[_i] = (uint32_t)(remainder / absb.digits[0]) & DIGIT_MAX;
+			remainder -= (uint64_t)(absa.digits[_i]) * absb.digits[0];
+		}
+
+		krk_long_init_si(rem, remainder);
+		_swap(quot, &absa);
+		krk_long_trim(quot);
+
+		krk_long_clear_many(&absa, &absb, NULL);
+		return 0;
+	}
+
+	size_t bits = _bits_in(a);
 	for (size_t i = 0; i < bits; ++i) {
 		size_t _i = bits - i - 1;
 
@@ -501,6 +529,7 @@ static int _div_abs(KrkLong * quot, KrkLong * rem, const KrkLong * a, const KrkL
 		}
 	}
 
+	krk_long_trim(quot);
 	krk_long_clear_many(&absa,&absb,NULL);
 
 	return 0;
